@@ -1,7 +1,7 @@
 // Offline cache for the PPE home-screen app. The version changes on every build, so a new build replaces the old cache.
 // Cache first: the app opens from the phone at once, even on ship Wi-Fi with no internet where requests hang;
 // a fresh copy is fetched in the background and used on the next launch.
-const CACHE = "ppe-7de22e12b1";
+const CACHE = "ppe-08206b31f5";
 const FILES = ["./", "index.html", "manifest.json", "icon-180.png", "icon-192.png", "icon-512.png"];
 const OPT = {ignoreSearch: true, ignoreVary: true};
 self.addEventListener("install", e => {
