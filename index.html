@@ -320,7 +320,8 @@ function calc(){
   WIN = {start, end, months, lastCount:maxD};
   C = {};
   for(const it of S.items){
-    const list = (byItem[it.id]||[]).sort((a,b)=> a[0].d<b[0].d?-1 : a[0].d>b[0].d?1 : a[1]-b[1]);
+    // same day: events with a clock time (counts, issues, phone imports) go in real time order, so a phone issue taken before a count is not subtracted twice
+    const list = (byItem[it.id]||[]).sort((a,b)=> a[0].d<b[0].d?-1 : a[0].d>b[0].d?1 : (a[0].at && b[0].at && a[0].at!==b[0].at) ? (a[0].at<b[0].at?-1:1) : a[1]-b[1]);
     let rob = null, used = 0, issued = 0, recv = 0; const monthly = {}; let lastCount = "";
     for(const [e] of list){
       let u = 0;
@@ -488,7 +489,7 @@ function renderMove(v){
     if(!UI.mvItem) return toast(L("Выберите позицию из списка."));
     const q = parseFloat($("mvqty").value);
     if(!(q>0) && !(t==="c" && q===0)) return toast(L("Введите количество больше нуля."));
-    S.ev.push({id:uid(), t, d:$("mvdate").value||today(), i:UI.mvItem, q, n:$("mvnote").value.trim()});
+    S.ev.push({id:uid(), t, d:$("mvdate").value||today(), i:UI.mvItem, q, n:$("mvnote").value.trim(), at:new Date().toISOString()});
     touch(); toast(L("Записано")+": "+itemById(UI.mvItem).name+" — "+fmt(q));
     UI.mvItem = null; renderMove(v);
   };
@@ -543,8 +544,9 @@ function renderCount(v){
     const d = UI.cntDate || today(); let n = 0;
     for(const id of Object.keys(UI.cnt)){
       const e = UI.cnt[id]; const r = parseFloat(e.r), f = parseFloat(e.f);
-      if(r>0) S.ev.push({id:uid(), t:"r", d, i:id, q:r, n:L("Приход с прошлого пересчёта")});
-      if(e.f!=="" && f>=0){ S.ev.push({id:uid(), t:"c", d, i:id, q:f}); n++; }
+      const at = new Date().toISOString();
+      if(r>0) S.ev.push({id:uid(), t:"r", d, i:id, q:r, n:L("Приход с прошлого пересчёта"), at});
+      if(e.f!=="" && f>=0){ S.ev.push({id:uid(), t:"c", d, i:id, q:f, at}); n++; }
       else if(r>0) n++;
     }
     if(!n) return toast(L("Введите фактический остаток хотя бы по одной позиции."));
@@ -862,7 +864,7 @@ function importIssues(list, src){
     if(have.has(id) || gone.has(id)) continue;
     let it = itemById(x.i) || S.items.find(i=>i.name===x.name);
     if(!it){ it = {id:"n"+uid(), name:x.name||"?", cat:guessCat(x.name||""), loc:"", unit:x.unit||"Pc", min:0, awaiting:0, ordered:0, photo:null, active:true}; S.items.push(it); }
-    S.ev.push({id, t:"i", d:x.d, i:it.id, q:+x.q, n:[L("С телефона")+": "+(x.who||"?"), x.n].filter(Boolean).join(" · ")});
+    S.ev.push({id, t:"i", d:x.d, i:it.id, q:+x.q, at:x.at, n:[L("С телефона")+": "+(x.who||"?"), x.n].filter(Boolean).join(" · ")});
     have.add(id); n++;
   }
   if(n){ touch(); render(); toast(L("Получено выдач с телефона")+": "+n+(src?" ("+src+")":"")); }

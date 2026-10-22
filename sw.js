@@ -1,5 +1,5 @@
 // Offline cache for the PPE home-screen app. The version changes on every build, so a new build replaces the old cache.
-const CACHE = "ppe-39f6ad4ec1";
+const CACHE = "ppe-9cc102b062";
 const FILES = ["./", "index.html", "manifest.json", "icon-180.png", "icon-192.png", "icon-512.png"];
 self.addEventListener("install", e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });
