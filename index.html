@@ -142,9 +142,11 @@ tr.edited td{background:var(--accent-soft)}
 .sample{background:var(--warn-bg);border-radius:6px;padding:8px 12px;font-size:13px}
 .quote{margin:0;padding:8px 12px;border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 6px 6px 0;font-size:13px}
 .qrow{display:flex;flex-direction:column;gap:2px;cursor:pointer}
+details.gq{font-size:13px} details.gq summary{cursor:pointer;color:var(--accent);font-weight:500;margin-bottom:6px} details.gq .qrow{margin-top:6px}
 h3.gh{margin:0;font-size:15px}
 .kpis.g{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
-.panel.gear td{white-space:nowrap} .panel.gear td:nth-child(2){white-space:normal;min-width:170px}
+.panel.gear td{white-space:nowrap} .panel.gear td:nth-child(2){white-space:normal;min-width:230px}
+.panel.gear .ico img, .dlg .ico img{object-fit:contain;background:#fff}
 tr.off td{opacity:.55}
 body.crewmode .tabs, body.crewmode #filestat, body.crewmode #openfile, body.crewmode #savefile, body.crewmode #xlsx, body.crewmode #ghsync{display:none}
 #ghsync,#ghset{display:none} body.gh #ghsync, body.gh #ghset{display:inline-flex} body.crewmode #ghset, body.crewmode #ghsync{display:none!important}
@@ -1066,7 +1068,7 @@ async function push(){
       if(it.photo && it.photo!==PHOTOS[it.name] && it.photo!==R.ph[it.id]) try{ await cloud.doc("data/sync/photos/"+it.id).set({p:it.photo}); }catch(e){} } }
     if(Object.keys(its).length) await syncWrite("data/sync/items/all", {it:its});
     const gd = {};
-    [["g","gear"],["gr","gearGroups"],["q","quotes"],["gi","gearInsp"]].forEach(([k,key])=>{ for(const x of (S[key]||[])){ const rx = R.gear[k][x.id]; if(!rx || (x.u||"") > (rx.u||"")) (gd[k] = gd[k]||{})[x.id] = x; } });
+    [["g","gear"],["gr","gearGroups"],["q","quotes"],["gi","gearInsp"]].forEach(([k,key])=>{ for(const x of (S[key]||[])){ const rx = R.gear[k][x.id]; if(!rx || (x.u||"") > (rx.u||"")){ const o = Object.assign({}, x); delete o.photo; (gd[k] = gd[k]||{})[x.id] = o; } } });
     if(Object.keys(gd).length) await syncWrite("data/sync/gear/all", gd);
     syncState = "on";
   }catch(e){ syncState = "error"; }
@@ -1220,6 +1222,9 @@ function applyStatic(){ document.documentElement.lang = LANG; document.querySele
 document.querySelectorAll("[data-lang]").forEach(b=>b.onclick = ()=>{ LANG = b.dataset.lang; try{ localStorage.setItem("ppe-lang", LANG); }catch(e){} applyStatic(); calc(); fileStatus(); render(); });
 /* ---------- Fall protection register: harnesses, lanyards, slings, hooks; each item tracked by serial number ---------- */
 const GEARSEED = null;
+const GEARPHOTOS = {"carabiner": "data:image/jpeg;base64,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", "snap": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAASABIAAD/4QCwRXhpZgAATU0AKgAAAAgABQESAAMAAAABAAEAAAEaAAUAAAABAAAASgEbAAUAAAABAAAAUgEoAAMAAAABAAIAAIdpAAQAAAABAAAAWgAAAAAAAABIAAAAAQAAAEgAAAABAAaQAAAHAAAABDAyMTCRAQAHAAAABAECAwCgAAAHAAAABDAxMDCgAQADAAAAAQABAACgAgAEAAAAAQAAAKCgAwAEAAAAAQAAAPAAAAAA/+0AOFBob3Rvc2hvcCAzLjAAOEJJTQQEAAAAAAAAOEJJTQQlAAAAAAAQ1B2M2Y8AsgTpgAmY7PhCfv/AABEIAPAAoAMBIgACEQEDEQH/xAAfAAABBQEBAQEBAQAAAAAAAAAAAQIDBAUGBwgJCgv/xAC1EAACAQMDAgQDBQUEBAAAAX0BAgMABBEFEiExQQYTUWEHInEUMoGRoQgjQrHBFVLR8CQzYnKCCQoWFxgZGiUmJygpKjQ1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4eLj5OXm5+jp6vHy8/T19vf4+fr/xAAfAQADAQEBAQEBAQEBAAAAAAAAAQIDBAUGBwgJCgv/xAC1EQACAQIEBAMEBwUEBAABAncAAQIDEQQFITEGEkFRB2FxEyIygQgUQpGhscEJIzNS8BVictEKFiQ04SXxFxgZGiYnKCkqNTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqCg4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2dri4+Tl5ufo6ery8/T19vf4+fr/2wBDAAICAgICAgQCAgQGBAQEBggGBgYGCAoICAgICAoMCgoKCgoKDAwMDAwMDAwODg4ODg4QEBAQEBISEhISEhISEhL/2wBDAQMDAwUEBQgEBAgTDQsNExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExP/3QAEAAr/2gAMAwEAAhEDEQA/AP2gooortMgBxRRRQAZooooAKKKKAFzikzmiigAooooAKKKKACiiigAooooAKKKKAP/Q/aCiiiu0yCiiigAooooAKKKKACiiloASiiigAooooAKKKKACiiigAooooA//0f2gooortMgooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/0v2gooortMgooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/0/2gooortMgooooAKKKKACiimsyopdzgDkk0AOoryzXfidY2c5sNDia9uBxhQSM/h1rxTxJ+0Amg3Hk63rem6bJ/zxaQPJ/3xEshH40roLH19RXyFon7RWk6jMkFrr2n3EkmAsbP5bEnsBKsZJ9hk17fpPxKsZ5VtdajNrI/RuqH8e1FwPTqKZHJHKgkiIZT0I6U+mAUUUUAFFFFABRjNFFAH//U/aCiiiu0yCiiigAooooAK8O8Xa7qXijWv+EQ0FikKczyrzhQcMfwyAB3JAr1XxBeXFvY/ZtOQy3lzmOCMYyzYJOMkDgA9xXheg+Cfi7pOuy6rBYLFayHdJBK8BJ2qcEyBi+cktxhdxPy+kylbQaRB4is/DGgWLeH44JLueZfmgViuR/emdcE5/u5x7V5lpnggw3Hm6NptlZE9ooRk/Vup/OvU9I09rhDqN0fMmnJZ2Pdsn9B0FexeH9Cgt4RNIoJNNIGz53uvhXqmtWL22q20F0jggpJGGU59mBrziy8Jax8Mr9bOzE8umu2X0uUmSPb/EbRmy0UgHKpko2MY9Pv0KBwBXK+MfDVt4m0KawcbZQN0Tj7yuvIIPqCKTiFzD0m5ttMsrS/0ifz9OukVonByCrfdPt6EdiCK9Bt51uIw68V4f8ADy7i1LwZLayIInLSCSNfupcRuYrjYOwdvLlx6ymvQ/CmoG7tY3Y5JBRvdlOP1oiwZ2dFFFUIKKKKACiiigD/1f2gooortMgooooAKKKKAPEfjdLeWPg3WNespXgn0+zhMEkZKsjS3KK5B9Sox9DXHJq2uX3iDxPYXVvLHDZLM0Eu1kw4ZiFSQNiTBJHHTAHauh/aMjMfwz1O6Sd4meOOJkGNki+dG3zAg/d6gjFdbeRkW14rHI86+PPvcuaymtSkzifCly8+jW08qsrONxDAg8knkHpXvdgc2q14hpTrNaQzRfdZQRXtmm8Wi1qSX6UcMD70lFAHzL4f1EeHfE3irTERQkF5HIu4kALdQjfj3326sM4H9fQPBk//AB8xA4EdzkD2YA15tdGZfip4lsoGVS8dpLliU4xcofmBBGc4Hbn1Iru/BsjG4vmznc0TH64NJbtB5ntFFIpyoPtS0wCiiigAooooA//W/aCiiiu0yCiiigAooooA8Y+LZ0vX7SPwLdgs96yY6gDDBuSOe3asyaTX9OvSNbmE8MrSbkQYyWJZjyBjLEkf4VZ+I0ES+KdMurFlkvRPFmN8gCLneVOCN+MYBwPU1hStqn/CTy3PjOcNZEyCKG3iG9Ru+UtIWPO3G4BQN3AOMVzVG7msUrG74fa3k08RwgqsZ2rnrivXtJmWa0GO1eP6CIwJfIz5W75N3XafXt7cV6T4cfG9DXRF3VzOW51VFFFMR8z6oW0/4jeJ9aVfMEVtZEpsWQHEkoyVb0BJ6+/aur8J4F9eFSWBWEgnqcqa5/UrNL74g+KLOUhEeys5GdgWVVSZskgHOOe31rovDdubS+ubZiDsjgGRyDhT0qY7sZ7RH/q1+gp9RQ/6lfoKlqhBRRRQAUUUUAf/1/2gooortMgooooAKKKKAPAviXJDYeNNHv7x/JjkuIbdHbIVppNwSMEfxMen6mq+pRvruvS2mmRSTyRmVGCrx+6kMb8kgZR1K49emRzVr9ojT7W5+HWo6yk8sd7o0P2+18vBCTRH93IQVPK5JU5HPrT7XRbFdXvprea5jnL3DErcSqV3sr8APjlmZjxkkknmsKkbO5pGXQTQEktjJazgrJEdrKQcjuK9M8OffevJfDUUllafv55rmSQ7mknfe7H3OBXsnh+3CQed61tFWViG7s6OiiimI+bfE19Bpnj/AMRfaWISfSbdSFV363MalgsYLEgNwB/Kum8OzLNfvNGSRLawOCeD0PUetcj48mt7L4havetEJ5ItFSTY+djKLqDIbHb+hrpvC00ct7CIQFBsIyFBJAwx6E8moXxMOiPbrf8A1CfQVNUFr/x7pn0FT1YBRRRQAUUUUAf/0P2gooortMgooooAKKKKAPDvjfdiD4c+LraQ8S6XkD1wCTj8q4zS/EWpS/GbV9CSLdaC0SUkKfkYqGOX3YOW4wFGMjk4Nd78Y/D0eqaJPPds4s5oGtrpY/vGMnjHT1IPpXy/B4u0JPFksieJNSOpXIETwLZx7iB0XaWO3Hc4rGad7Fo+hLLIgXFe26L/AMeCfSvEtMdJbSF1yQyrz3PHX8a9x0lAligrYg0qKKUcnFAHy946hkvfiPrMKKH/AOJIkQUkgFnuoiAduDztPTniuj8GwTW18kMwK+VYxrgknGXJHXB6etYMd3Jc+NPEHiJQHjknisbcHv8AZ1JYj/ttcQr+DeldvocbNrOoy9laOEH/AHQT/Woju2PyPXbXi3T6Cp6jhGIlHoBUlWIKKKKACiiigD//0f2gooortMgooooAKKKKAKeoWUWo2MtjOMrKpU5r4U8Yazq/wq8dxeL9VL3GkxBbPUomG7yoCNsdymOcxjCyeqDPvX3vXn/jbwRbeKIDKgXz9pUhhkOuMYP8vpxSauF7HlNtc2emCP7PIsmm3AElpcK2UKvyFLdO/wAp6EV7b4d1SK4txEx5Ar4YsvC3xC+Dt3c6Z4ZWPUtClZmOj3RKGItyRbTc7VJJOxhgdiBRb/Fu10E77l73RCScxXcEjIp9A8SSqR75pXtuC12P0Q615d8SPiJYeEdMmtLWVDqDodik8Rju7+gHXHevk28+P8F5D5A8SebnjbaQXMjH6bYB/MVX0BNX1y+F1p1nPBuYOt5fqoYEfxpbZclx1VpXwp52EijnHY9l+HtjPaaf9r1Qt/ozG5aN+DGSC0SsOokcu07g8rujU4Ir2LwxprxRKJQfMkYyyfVu34DArk/DPh/y7eG0iVhBExkwxLPLKxyZJGPUk817FY2YtY8ty5604qwMvUUUUxBRRRQAUUUUAf/S/aCiiiu0yCiiigAooooAKKKKAM7UNJ07VU8u/iWT3PUfj1rz+++Fmi3LEwMVB/hbkf0r1GiiwHkNt8K7O1OIioHsK6bTvA+nWR3udxruKKLBcrwWsFsu2FcVYoooAKKKKACiiigAooooA//T/aCiiiu0yCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/U/aCiiiu0yCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/V/aCiiiu0yCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/Z"};   // example photos per type (Scandia Gear product photos)
+const gearImg = g => g.photo || GEARPHOTOS[g.grp] || null;
+const gearIco = (g, big) => { const src = gearImg(g); return src ? `<span class="ico${big?" big":""}"><img src="${src}" alt="" loading="lazy"></span>` : `<span class="ico${big?" big":""}"></span>`; };
 const GSTAT = {in:"In use", spare:"Spare", missing:"Missing", out:"Removed / destroyed"};
 const RULES = {life:"Service life", inspect:"Inspection", remove:"Unsuitable equipment", min:"Minimum on board", use:"Use", general:"General"};
 const GUI = {q:"", only:false, grp:"", out:false};
@@ -1235,6 +1240,11 @@ function ensureGear(st){
     GEARSEED.quotes.forEach(q=>{ if(!st.quotes.some(y=>y.id===q.id)) st.quotes.push(Object.assign({}, q)); });
     if(!st.meta.vessel) st.meta.vessel = GEARSEED.vessel;
     st.meta.gearSeeded = true;
+  }
+  if(GEARSEED && (st.meta.gearQuotesVer||1) < (GEARSEED.quotesVer||1)){
+    const gone = new Set(st.meta.removedQuotes||[]);
+    GEARSEED.quotes.forEach(q=>{ if(!gone.has(q.id) && !st.quotes.some(y=>y.id===q.id)) st.quotes.push(Object.assign({}, q)); });
+    st.meta.gearQuotesVer = GEARSEED.quotesVer;
   }
   return st;
 }
@@ -1252,7 +1262,7 @@ function gearCheck(g){
   if(g.status==="missing") msgs.push({t:"Missing: not found on board", lvl:"bad"});
   if(exp && exp < now) msgs.push({t:`Expired ${fdate(exp)}${g.exp?"":" (calculated)"}`, rule:"life", lvl:"bad"});
   else if(exp && exp <= addMonths(now, +set.warn||3)) msgs.push({t:`Expires ${fdate(exp)}: plan the replacement`, rule:"life", lvl:"warn"});
-  if(g.exp && limit && g.exp > addMonths(limit, 1)) msgs.push({t:`Exp. date is more than ${set.life} years after ${g.inuse?"date in use":"manufacture"} (${fdate(start)}); ${set.life}-year limit is ${fdate(limit)}`, rule:"life", lvl: limit < now ? "bad" : "warn"});
+  if(g.exp && limit && g.exp > addMonths(limit, 1)) msgs.push({s:`Over ${set.life}-year limit`, t:`Exp. date is more than ${set.life} years after ${g.inuse?"date in use":"manufacture"} (${fdate(start)}); ${set.life}-year limit is ${fdate(limit)}`, rule:"life", lvl: limit < now ? "bad" : "warn"});
   if(!g.exp && !start && !noLife) msgs.push({t:"No dates: add date manufactured or date in use", lvl:"warn"});
   if(/expired|damaged|unsat|bad|condemn/i.test(g.cond)) msgs.push({t:`Condition: ${g.cond}`, rule:"remove", lvl:"bad"});
   if(+set.every && g.status!=="missing"){ const li = lastInsp(g); const due = li ? addMonths(li.d, +set.every) : "";
@@ -1289,7 +1299,7 @@ function renderGear(v){
     </div>
     <div class="panel">
       <div class="tools" style="justify-content:space-between"><h2>Safety Management Manual</h2><button id="gqadd">+ Add quote</button></div>
-      ${S.quotes.map(q=>`<div class="qrow" data-q="${q.id}">${quoteHTML(q)}<small class="hint">${esc(RULES[q.rule]||"General")} · tap to edit</small></div>`).join("") || `<p class="hint">No quotes yet.</p>`}
+      ${S.quotes.filter(q=>!q.grp).map(q=>`<div class="qrow" data-q="${q.id}">${quoteHTML(q)}<small class="hint">${esc(RULES[q.rule]||"General")} · tap to edit</small></div>`).join("") || `<p class="hint">No quotes yet.</p>`}
       ${short.length ? `<div class="sample"><b>Below the minimum on board:</b> ${short.map(gr=>{ const s = grpSummary(gr); return `${esc(gr.name)}: ${s.valid} of ${gr.min} valid, order ${s.short}`; }).join("; ")}.</div>` : ""}
     </div>
     <div class="panel">
@@ -1303,14 +1313,15 @@ function renderGear(v){
     ${S.gearGroups.map(gr=>{ const s = grpSummary(gr); const rows = S.gear.filter(g=>g.grp===gr.id && match(g) && (g.status!=="out" || GUI.out));
       if(!rows.length && (q || GUI.only)) return "";
       return `<div class="panel gear">
-        <div class="tools" style="justify-content:space-between"><div><h3 class="gh">${esc(gr.name)}</h3><small class="hint">${gr.std?esc(gr.std)+" · ":""}${+gr.min ? `Minimum on board ${gr.min} · valid ${s.valid} ${s.short?`<span class="pill bad">short ${s.short}</span>`:`<span class="pill ok">OK</span>`}` : `${s.valid} valid`}</small></div>
+        <div class="tools" style="justify-content:space-between"><div class="nm">${GEARPHOTOS[gr.id]?`<span class="ico"><img src="${GEARPHOTOS[gr.id]}" alt=""></span>`:""}<div><h3 class="gh">${esc(gr.name)}</h3><small class="hint">${gr.std?esc(gr.std)+" · ":""}${+gr.min ? `Minimum on board ${gr.min} · valid ${s.valid} ${s.short?`<span class="pill bad">short ${s.short}</span>`:`<span class="pill ok">OK</span>`}` : `${s.valid} valid`}</small></div></div>
           <button data-add="${gr.id}">+ Add</button></div>
+        ${(()=>{ const gq = S.quotes.filter(x=>x.grp===gr.id); return gq.length ? `<details class="gq"><summary>Manual: ${gq.length} ${gq.length===1?"requirement":"requirements"} for this type</summary>${gq.map(x=>`<div class="qrow" data-q="${x.id}">${quoteHTML(x)}</div>`).join("")}</details>` : ""; })()}
         <div class="tbl-wrap"><table><thead><tr><th>No.</th><th>Name</th><th>Location</th><th>Maker / type</th><th>Serial No.</th><th>Made</th><th>In use</th><th>Exp. date</th><th>Condition</th><th>Status</th></tr></thead>
         <tbody>${rows.map(g=>{ const c = chk.get(g.id) || gearCheck(g); return `<tr class="click${g.status==="out"?" off":""}" data-g="${g.id}">
-          <td>${esc(g.no)}</td><td><b>${esc(g.name)}</b>${g.size?`<small> · ${esc(g.size)}</small>`:""}</td><td>${esc(g.loc)}</td><td>${esc([g.maker,g.type].filter(Boolean).join(" · "))}</td>
+          <td>${esc(g.no)}</td><td><span class="nm">${gearIco(g)}<span><b>${esc(g.name)}</b>${g.size?`<small> · ${esc(g.size)}</small>`:""}</span></span></td><td>${esc(g.loc)}</td><td>${esc([g.maker,g.type].filter(Boolean).join(" · "))}</td>
           <td class="num">${esc(g.serial)||"—"}</td><td class="num">${fdate(g.mfd)}</td><td class="num">${fdate(g.inuse)}</td>
           <td class="num">${c.exp?`<span class="pill ${c.lvl==="bad"&&c.msgs.some(m=>m.rule==="life")?"bad":c.msgs.some(m=>m.rule==="life")?"warn":"ok"}">${fdate(c.exp)}${c.calc?"*":""}</span>`:"—"}</td>
-          <td>${esc(g.cond)}</td><td>${g.status==="in"&&c.lvl==="ok"?esc(GSTAT[g.status]):`<span class="pill ${c.lvl==="off"?"":c.lvl}" title="${esc(c.msgs.map(m=>m.t).join("; "))}">${esc(c.lvl==="ok"?GSTAT[g.status]:c.msgs[0].t.split(":")[0].split(" (")[0])}</span>`}</td></tr>`; }).join("") || `<tr><td colspan="10" class="empty">No items.</td></tr>`}</tbody></table></div>
+          <td>${esc(g.cond)}</td><td>${g.status==="in"&&c.lvl==="ok"?esc(GSTAT[g.status]):`<span class="pill ${c.lvl==="off"?"":c.lvl}" title="${esc(c.msgs.map(m=>m.t).join("; "))}">${esc(c.lvl==="ok"?GSTAT[g.status]:(c.msgs[0].s||c.msgs[0].t.split(":")[0].split(" (")[0]))}</span>`}</td></tr>`; }).join("") || `<tr><td colspan="10" class="empty">No items.</td></tr>`}</tbody></table></div>
       </div>`; }).join("")}
     <p class="hint">* Exp. date calculated from date in use (or manufacture) + ${S.gearSet.life} years, as no date is written in the register. Types marked “no fixed service life” in Rules (steel hooks, Exp. date N/A in the register) are not given one.</p>`;
   const gq = $("gq"); gq.oninput = ()=>{ GUI.q = gq.value; const p = gq.selectionStart; renderGear(v); const n = $("gq"); n.focus(); n.setSelectionRange(p,p); };
@@ -1331,9 +1342,11 @@ function openGear(id, grp){
   const locs = [...new Set(S.gear.map(x=>x.loc).filter(Boolean))];
   const f = (k, label, type) => `<label>${label}<input id="g_${k}" ${type?`type="${type}"`:""} value="${esc(g[k]||"")}" ${k==="loc"?'list="glocs"':""}></label>`;
   const d = modal(`
-    <div class="dlg-head"><div class="grow"><h3>${isNew?"New item":esc(g.name)+(g.serial?" · "+esc(g.serial):"")}</h3><small class="hint">${esc(grpById(g.grp).name)}</small></div><button class="x" id="gclose" aria-label="Close" style="font-size:18px">✕</button></div>
+    <div class="dlg-head"><div id="gph">${gearIco(g,true)}</div><div class="grow"><h3>${isNew?"New item":esc(g.name)+(g.serial?" · "+esc(g.serial):"")}</h3><small class="hint">${esc(grpById(g.grp).name)}</small>
+      <small class="hint" id="gphn">${g.photo?"Own photo":gearImg(g)?"Example photo of this type (Scandia Gear), not this exact item":""}</small><div class="tools"><button id="gup">Upload own photo</button>${g.photo?`<button id="grmph">Use example photo</button>`:""}</div></div><button class="x" id="gclose" aria-label="Close" style="font-size:18px">✕</button></div>
     ${isNew?"":c.msgs.length?`<div class="sample">${c.msgs.map(m=>esc(m.t)).join("<br>")}</div>`:`<div class="hint">No problems found.${li?` Last inspection ${fdate(li.d)}.`:""}</div>`}
-    ${rules.map(r=>quotesFor(r).map(quoteHTML).join("")).join("")}
+    ${rules.map(r=>quotesFor(r).filter(x=>!x.grp).map(quoteHTML).join("")).join("")}
+    ${S.quotes.filter(x=>x.grp===g.grp).length ? `<details class="gq"><summary>Manual requirements for this type</summary>${S.quotes.filter(x=>x.grp===g.grp).map(quoteHTML).join("")}</details>` : ""}
     <div class="row">
       <label>Type of equipment<select id="g_grp">${S.gearGroups.map(x=>`<option value="${x.id}" ${x.id===g.grp?"selected":""}>${esc(x.name)}</option>`).join("")}</select></label>
       ${f("no","No.")}${f("name","Name")}${f("loc","Location")}<datalist id="glocs">${locs.map(l=>`<option value="${esc(l)}"></option>`).join("")}</datalist>
@@ -1347,11 +1360,16 @@ function openGear(id, grp){
     <div class="tools" style="justify-content:space-between"><div class="tools">${isNew?"":`<button class="danger" id="gdel">Delete</button>`}</div>
       <div class="tools"><button id="gcancel">Cancel</button><button class="primary" id="gsave">Save</button></div></div>`);
   const q = s => d.el.querySelector(s);
+  let photo = g.photo || null;
+  const showPh = ()=>{ q("#gph").innerHTML = gearIco(Object.assign({}, g, {photo}), true); q("#gphn").textContent = photo ? "Own photo" : ""; };
+  q("#gup").onclick = ()=>{ const inp = $("photoinput"); inp.value = ""; inp.onchange = async ()=>{ const f = inp.files[0]; if(!f) return; photo = await shrink(f); showPh(); }; inp.click(); };
+  if(q("#grmph")) q("#grmph").onclick = ()=>{ photo = null; showPh(); };
   q("#gclose").onclick = q("#gcancel").onclick = d.close;
   q("#g5").onclick = ()=>{ const s = q("#g_inuse").value || q("#g_mfd").value; if(!s) return toast("Enter the date in use (or manufacture) first."); q("#g_exp").value = addYears(s, +S.gearSet.life||5); };
   q("#gsave").onclick = ()=>{
     for(const k of ["grp","no","name","loc","maker","type","serial","size","mfd","inuse","exp","cond","status","rem"]) g[k] = q("#g_"+k).value.trim();
     if(!g.name) return toast("Enter a name.");
+    if(photo) g.photo = photo; else delete g.photo;
     g.u = new Date().toISOString();
     if(isNew) S.gear.push(g);
     d.close(); touch(); render(); toast("Saved.");
@@ -1370,10 +1388,11 @@ function openQuote(id){
     <label>Reference (chapter / section)<input id="qref" placeholder="M009 - 10.4.1" value="${esc(qt.ref)}"></label>
     <label>Text<textarea id="qtext" rows="6">${esc(qt.text)}</textarea></label>
     <label>Shown next to<select id="qrule">${Object.entries(RULES).map(([k,t])=>`<option value="${k}" ${qt.rule===k?"selected":""}>${t}</option>`).join("")}</select></label>
+    <label>Equipment type (optional)<select id="qgrp"><option value="">All types (top of the tab)</option>${S.gearGroups.map(g=>`<option value="${g.id}" ${qt.grp===g.id?"selected":""}>${esc(g.name)}</option>`).join("")}</select></label>
     <div class="tools" style="justify-content:space-between"><div>${isNew?"":`<button class="danger" id="qdel">Delete</button>`}</div><div class="tools"><button id="qcancel">Cancel</button><button class="primary" id="qsave">Save</button></div></div>`, "small");
   const q = s => d.el.querySelector(s);
   q("#qcancel").onclick = d.close;
-  q("#qsave").onclick = ()=>{ qt.ref = q("#qref").value.trim(); qt.text = q("#qtext").value.trim(); qt.rule = q("#qrule").value; if(!qt.text) return toast("Paste the text of the quote.");
+  q("#qsave").onclick = ()=>{ qt.ref = q("#qref").value.trim(); qt.text = q("#qtext").value.trim(); qt.rule = q("#qrule").value; qt.grp = q("#qgrp").value || undefined; if(!qt.grp) delete qt.grp; if(!qt.text) return toast("Paste the text of the quote.");
     qt.u = new Date().toISOString(); if(isNew) S.quotes.push(qt); d.close(); touch(); render(); };
   if(q("#qdel")) q("#qdel").onclick = ()=>{ S.quotes = S.quotes.filter(x=>x!==qt); S.meta.removedQuotes = (S.meta.removedQuotes||[]).concat(qt.id); d.close(); touch(); render(); };
 }
