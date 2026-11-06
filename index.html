@@ -156,6 +156,9 @@ body.crewmode .tabs, body.crewmode #filestat, body.crewmode #openfile, body.crew
 .stepper input{width:90px;height:48px;text-align:center;font-size:20px;font-family:var(--font-mono)}
 .primary.big{padding:14px 18px;font-size:16px}
 .crew .ta-list{max-height:60vh}
+.safebar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:8px 16px;background:var(--warn-bg);color:var(--ink);font-size:13px;border-top:1px solid var(--line)}
+.safebar[hidden]{display:none}
+body.crewmode #undo, body.crewmode #redo, body.crewmode #backups, body.crewmode #safebar{display:none!important}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head><body>
@@ -167,10 +170,14 @@ body.crewmode .tabs, body.crewmode #filestat, body.crewmode #openfile, body.crew
     <button id="openfile" data-t="Открыть файл данных">Открыть файл данных</button>
     <button id="savefile" class="primary" data-t="Сохранить файл данных">Сохранить файл данных</button>
     <button id="xlsx" data-t="Экспорт в Excel">Экспорт в Excel</button>
+    <button id="undo" disabled title="Nothing to undo">↶ Undo</button><button id="redo" hidden>↷ Redo</button>
+    <button id="backups" title="Versions, restore and auto-save to a folder">Backups</button>
+    <div class="seg small" role="group" aria-label="Background"><button data-theme="light">White</button><button data-theme="dark">Dark</button></div>
     
     <input type="file" id="fileinput" accept=".json,application/json" hidden>
   </div>
 </div>
+<div id="safebar" class="safebar" hidden></div>
 <nav class="tabs" role="tablist">
   <button role="tab" data-tab="stock" data-t="Склад">Склад</button>
   <button role="tab" data-tab="gear">Fall protection</button>
@@ -696,7 +703,7 @@ function openItem(id){
   };
   if(!isNew){
     el.querySelector("#darch").onclick = ()=>{ it.active = it.active===false; it.u = new Date().toISOString(); d.close(); touch(); render(); };
-    el.querySelector("#ddel").onclick = async ()=>{ if(await ask(L("Удалить позицию со всей историей?"), it.name, L("Удалить"))){ (S.meta.removedItems = S.meta.removedItems||[]).push(it.id); S.items = S.items.filter(x=>x!==it); S.ev = S.ev.filter(e=>e.i!==it.id); d.close(); touch(); render(); } };
+    el.querySelector("#ddel").onclick = async ()=>{ if(await ask(L("Удалить позицию со всей историей?"), it.name+" (you can undo this with ↶ Undo or restore it from Backups)", L("Удалить"))){ Safety.snapshot("Before deleting "+it.name); (S.meta.removedItems = S.meta.removedItems||[]).push(it.id); S.items = S.items.filter(x=>x!==it); S.ev = S.ev.filter(e=>e.i!==it.id); d.close(); touch(); render(); } };
     bindLogDelete(el, ()=>{ d.close(); render(); openItem(it.id); });
   }
 }
@@ -761,6 +768,7 @@ function saveErr(err){ const c = err && err.code; toast(c==="declined" ? L("Со
 function stamp(){ const d = new Date(); return d.toISOString().slice(0,10); }
 $("savefile").onclick = async ()=>{
   try{
+    if(fileHandle && !(await Safety.checkDisk(fileHandle))) return;
     const out = Object.assign({}, S, {meta:Object.assign({}, S.meta, {saved:new Date().toISOString()})});
     const blob = new Blob([JSON.stringify(out)], {type:"application/json"});
     const name = await saveBlob(blob, "PPE data "+stamp()+".json", "json");
@@ -778,7 +786,7 @@ $("openfile").onclick = async ()=>{
 $("fileinput").onchange = async e=>{ const f = e.target.files[0]; if(f) loadText(await f.text(), f.name); };
 
 /* ---------- GitHub sync: the PC and the iPhone share one data file in the user's private GitHub repo ---------- */
-const ghCfg = ()=>lsGet("ppe-gh", null);
+const ghCfg = ()=>null;   // GitHub sync switched off (user request 2026-11-06): data is kept in a folder on the computer instead
 let ghBusy = false, ghT = 0;
 const b64enc = txt => { const b = new TextEncoder().encode(txt); let s = ""; for(let i=0;i<b.length;i+=0x8000) s += String.fromCharCode.apply(null, b.subarray(i,i+0x8000)); return btoa(s); };
 const b64dec = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")), c=>c.charCodeAt(0)));
@@ -809,7 +817,7 @@ async function ghSync(quiet){
         if(txt===null){ const rr = await fetch(url+"?ref=main&t="+Date.now(), {headers:Object.assign({}, h, {Accept:"application/vnd.github.raw+json"}), cache:"no-store"}); txt = await rr.text(); }
         try{ remote = JSON.parse(txt); }catch(e){}
         if(!remote || remote.kind!=="ppe-inventory") throw new Error("The file in GitHub is not a PPE data file.");
-      } else if(r.status===401) throw new Error("GitHub refused the token. It may be mistyped or expired: open Sync settings (⚙) and paste a new one.");
+      } else if(r.status===401) throw new Error("GitHub refused the token. It is mistyped, expired, or was replaced by “Regenerate” (that stops the old token on every computer). Open Sync settings (⚙), clear the field, paste the current token.");
       else if(r.status===404){
         const rr = await fetch(`https://api.github.com/repos/${c.repo}`, {headers:h, cache:"no-store"});
         if(rr.status!==200) throw new Error(`Repository ${c.repo} not found, or the token has no access to it.`);
@@ -842,17 +850,20 @@ function ghSetup(){
   const d = modal(`<h3 style="margin:0">Sync with GitHub</h3>
     <p class="hint" style="margin:0">Your PC and iPhone keep one shared data file in your <b>private</b> GitHub repository. Press Sync on either device: it merges both sides, so nothing is overwritten.</p>
     <label>Repository (owner/name)<input id="ghrepo" placeholder="Andrejs-G/ppe-data" value="${esc(c.repo)}" autocapitalize="off" autocorrect="off"></label>
-    <label>Access token<input id="ghtok" type="password" placeholder="github_pat_…" value="${esc(c.token)}" autocomplete="off"></label>
+    <label>Access token<input id="ghtok" type="password" placeholder="github_pat_…" value="${esc(c.token)}" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:-6px"><input id="ghshow" type="checkbox" style="width:auto"> Show the token (check it starts with github_pat_ and has no extra text)</label>
     <label style="flex-direction:row;align-items:center;gap:8px"><input id="ghauto" type="checkbox" style="width:auto" ${c.auto!==false?"checked":""}> Sync automatically when online (on opening and after changes)</label>
     <p class="hint" style="margin:0">The token stays only on this device. Make it at github.com → Settings → Developer settings → Fine-grained tokens: only this repository, permission Contents: Read and write.</p>
     <div class="tools" style="justify-content:space-between">${ghCfg()?`<button id="ghoff">Disconnect</button>`:"<span></span>"}<span class="tools"><button id="ghcancel">Cancel</button><button id="ghsave" class="primary">Save and sync</button></span></div>`, "small");
   const q = sel=>d.el.querySelector(sel);
   q("#ghcancel").onclick = d.close;
+  q("#ghshow").onchange = e=>{ q("#ghtok").type = e.target.checked ? "text" : "password"; };
   if(q("#ghoff")) q("#ghoff").onclick = ()=>{ try{ localStorage.removeItem("ppe-gh"); }catch(e){} d.close(); fileStatus(); toast("GitHub sync disconnected on this device."); };
   q("#ghsave").onclick = ()=>{
-    const repo = q("#ghrepo").value.trim().replace(/^https?:\/\/github\.com\//,"").replace(/\.git$/,"").replace(/\/$/,""), token = q("#ghtok").value.trim();
+    const repo = q("#ghrepo").value.trim().replace(/^https?:\/\/github\.com\//,"").replace(/\.git$/,"").replace(/\/$/,""), token = q("#ghtok").value.replace(/[\s\u200b-\u200d\ufeff"'«»“”]/g,"");
     if(!/^[\w.-]+\/[\w.-]+$/.test(repo)) return toast("Write the repository as owner/name, e.g. Andrejs-G/ppe-data.");
     if(!token) return toast("Paste the access token.");
+    if(!/^(github_pat_|ghp_)[A-Za-z0-9_]+$/.test(token)) return toast("This does not look like a GitHub token: it must start with github_pat_ (or ghp_) and contain only letters, digits and _. Tick “Show the token” to check it.");
     lsSet("ppe-gh", {repo, token, path:c.path||"PPE data.json", auto:q("#ghauto").checked, at:c.repo===repo?c.at:""}); d.close(); ghSync(false);
   };
 }
@@ -876,6 +887,7 @@ async function loadText(txt, name){
     if(!how) return;
     if(how==="merge"){ const r = mergeState(st); touch(); render(); toast(`Merged ${name}: ${r.ev} new records, ${r.items} items added or updated${r.del?", "+r.del+" deleted":""}.`); return; }
   }
+  if(!(await Safety.confirmReplace(st, name))) return;
   st.settings = Object.assign({months:3, end:"", safety:20}, st.settings||{}); st.override = st.override||{}; st.meta = Object.assign({}, st.meta||{}, {file:name, changed:(st.meta&&st.meta.saved)||new Date().toISOString()});
   addSeedPhotos(st); ensureGear(st); S = st; calc(); persist(); fileStatus(); render(); toast(L("Данные загружены из файла")+": "+name);
 }
@@ -917,8 +929,9 @@ function fileStatus(){
   el.classList.toggle("dirty", dirty);
   const t = s => { const d = new Date(s); return fdate(d.toISOString().slice(0,10))+" "+d.toTimeString().slice(0,5); };
   el.textContent = (S.meta.file ? S.meta.file+" · " : "") + (dirty ? L("Не сохранено в файл с ")+t(S.meta.saved||S.meta.created) : L("Все изменения сохранены в файл"));
-  if(S.meta.file==="GitHub"){ el.textContent = dirty ? "Changes not synced yet (last sync "+t(S.meta.saved)+")" : "Synced with GitHub "+t(S.meta.saved); el.classList.toggle("dirty", dirty); }
+  if(S.meta.file==="GitHub" && ghCfg()){ el.textContent = dirty ? "Changes not synced yet (last sync "+t(S.meta.saved)+")" : "Synced with GitHub "+t(S.meta.saved); el.classList.toggle("dirty", dirty); }
   else if(ghCfg()) el.textContent += ghStatusText();
+  try{ el.textContent += Safety.statusText(); Safety.refresh(); }catch(e){}
   if(typeof syncState!=="undefined" && syncState!=="off"){ el.textContent += syncState==="on" ? " · Online sync on" : " · Online sync: no connection, will retry"; if(syncState==="on") el.classList.remove("dirty"); }
 }
 
@@ -1220,6 +1233,10 @@ function bindCrewPanel(){
 let toastT = 0;
 function toast(msg){ let t = document.querySelector(".toast"); if(!t){ t = document.createElement("div"); t.className = "toast"; t.setAttribute("role","status"); document.body.appendChild(t); } t.textContent = msg; clearTimeout(toastT); toastT = setTimeout(()=>t.remove(), 5000); }
 function applyStatic(){ document.documentElement.lang = LANG; document.querySelectorAll("[data-t]").forEach(el=>el.textContent = L(el.dataset.t)); document.querySelectorAll("[data-lang]").forEach(b=>b.setAttribute("aria-pressed", b.dataset.lang===LANG)); document.title = L("Склад СИЗ (PPE)"); }
+/* white (default) or dark background, remembered on this device */
+function applyTheme(t){ document.documentElement.setAttribute("data-theme", t); document.querySelectorAll("button[data-theme]").forEach(b=>b.setAttribute("aria-pressed", b.dataset.theme===t)); }
+document.querySelectorAll("button[data-theme]").forEach(b=>b.onclick = ()=>{ lsSet("ppe-theme", b.dataset.theme); applyTheme(b.dataset.theme); });
+applyTheme(lsGet("ppe-theme", "light"));
 document.querySelectorAll("[data-lang]").forEach(b=>b.onclick = ()=>{ LANG = b.dataset.lang; try{ localStorage.setItem("ppe-lang", LANG); }catch(e){} applyStatic(); calc(); fileStatus(); render(); });
 /* ---------- Fall protection register: harnesses, lanyards, slings, hooks; each item tracked by serial number ---------- */
 const GEARSEED = null;
@@ -1460,6 +1477,352 @@ async function exportGear(){
   }catch(err){ saveErr(err); }
 }
 
+/* ---------- data safety settings for this app (the shared block below does the work) ---------- */
+const SAFE_CFG = {
+  kind:"ppe-inventory", file:"PPE data.json", base:"PPE data", label:"PPE data",
+  active: ()=> MODE!=="crew" && !!S && S.kind==="ppe-inventory",
+  pack: st=>Object.assign({}, st, {items:st.items.map(it=>{ const o = Object.assign({}, it); delete o._ps; if(o.photo && o.photo===PHOTOS[o.name]) o.photo = null; return o; })}),
+  unpack: async o=>{ o.meta = o.meta||{}; addSeedPhotos(o); ensureGear(o); o.settings = Object.assign({months:3,end:"",safety:20}, o.settings||{}); o.override = o.override||{}; return o; },
+  lists: [["items","removedItems"],["ev","removed"],["gear","removedGear"],["gearGroups","removedGroups"],["quotes","removedQuotes"],["gearInsp","removedInsp"]],
+  refs: {items:[["ev","i"]], gearGroups:[["gear","grp"]], gear:[["gearInsp","items"]]},
+  overrideOf: "items",
+  // earlier versions of the shared GitHub data file (every sync is a commit)
+  hasGh: ()=>!!ghCfg() && !(window.claude && claude.use),
+  ghList: async ()=>{
+    const c = ghCfg(); if(!c) throw new Error("GitHub sync is not set up on this device.");
+    const r = await fetch(`https://api.github.com/repos/${c.repo}/commits?path=${encodeURIComponent(c.path||"PPE data.json")}&sha=main&per_page=60`, {headers:{Authorization:"Bearer "+c.token, Accept:"application/vnd.github+json"}, cache:"no-store"});
+    if(!r.ok) throw new Error("GitHub error "+r.status+". Check the internet connection and the token.");
+    return (await r.json()).map(x=>({sha:x.sha, at:x.commit.committer.date, msg:x.commit.message}));
+  },
+  ghGet: async sha=>{
+    const c = ghCfg();
+    const r = await fetch(`https://api.github.com/repos/${c.repo}/contents/${encodeURIComponent(c.path||"PPE data.json")}?ref=${sha}`, {headers:{Authorization:"Bearer "+c.token, Accept:"application/vnd.github.raw+json"}, cache:"no-store"});
+    if(!r.ok) throw new Error("GitHub error "+r.status);
+    const st = JSON.parse(await r.text()); if(!st || st.kind!=="ppe-inventory") throw new Error("That version is not a PPE data file.");
+    return st;
+  }
+};
+/* ---------- data safety: versions, undo, folder auto-save, overwrite and mass-delete guards (shared by PPE and Paint) ---------- */
+// The app defines SAFE_CFG before this block: {kind, file, base, pack(st)->obj, unpack(obj)->Promise<st>, lists:[[list, tombstoneKey]], refs:{list:[[childList, field]]}, overrideOf, active()}
+const Safety = (()=>{
+  const C = SAFE_CFG;
+  const VOLATILE = ["saved","file","changed","edited","created"];
+  const iso = () => new Date().toISOString();
+  const nid = () => "r"+Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+  const t = s => { if(!s) return "—"; const d = new Date(s); return fdate(d.toISOString().slice(0,10))+" "+d.toTimeString().slice(0,5); };
+  const day = s => { const d = new Date(s); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+  const put = (k, v) => new Promise(res=>{ if(!idb) return res(false); try{ const tx = idb.transaction("kv","readwrite"); tx.objectStore("kv").put(v, k); tx.oncomplete = ()=>res(true); tx.onerror = tx.onabort = ()=>res(false); }catch(e){ res(false); } });
+  const del = k => { if(!idb) return; try{ idb.transaction("kv","readwrite").objectStore("kv").delete(k); }catch(e){} };
+  const on = () => { try{ return C.active(); }catch(e){ return false; } };
+  const hash = s => { let h = 5381; for(let i=0;i<s.length;i++) h = (h*33 ^ s.charCodeAt(i))>>>0; return s.length+"-"+h.toString(36); };
+
+  // the state as text without the save bookkeeping, so two copies with the same content compare equal
+  function capture(st){ const o = C.pack(st||S); o.meta = Object.assign({}, o.meta||{}); VOLATILE.forEach(k=>delete o.meta[k]); return JSON.stringify(o); }
+  function counts(st){ const ev = st.ev||[]; let last = ""; ev.forEach(e=>{ if(e.d>last) last = e.d; }); return {items:(st.items||[]).length, recs:ev.length, last}; }
+  async function fromText(txt){ const o = JSON.parse(txt); return C.unpack(o); }
+
+  /* ---- versions kept in this browser ---- */
+  let idx = null, lastSnapHash = "", lastSnapAt = 0;
+  const pending = [];
+  async function loadIdx(){ if(idx) return idx; idx = (await idbGet("snapidx")) || []; if(idx.length){ lastSnapHash = idx[0].h; lastSnapAt = Date.parse(idx[0].at); } return idx; }
+  // takes the copy now (sync), writes it in the background
+  function snapshot(why, txt){
+    if(!on()) return;
+    txt = txt || capture();
+    const job = {txt, why, at:iso()};
+    if(!idb){ pending.push(job); return; }
+    writeSnap(job);
+  }
+  let chain = Promise.resolve();
+  function writeSnap(job){ chain = chain.then(async ()=>{
+    await loadIdx();
+    const h = hash(job.txt);
+    if(h===lastSnapHash) return;
+    const st = JSON.parse(job.txt), c = counts(st), id = "s"+Date.now().toString(36)+Math.random().toString(36).slice(2,5);
+    if(C.keepFiles) await C.keepFiles();
+    if(!(await put("snap:"+id, job.txt))) return;
+    idx.unshift({id, at:job.at, why:job.why, items:c.items, recs:c.recs, last:c.last, size:job.txt.length, h});
+    lastSnapHash = h; lastSnapAt = Date.now();
+    prune(); await put("snapidx", idx);
+  }).catch(()=>{}); return chain; }
+  // keep the last 40 versions, plus the last version of each day for 90 days
+  function prune(){
+    const keep = new Set(idx.slice(0,40).map(x=>x.id)), days = new Set(), lim = Date.now()-90*864e5;
+    for(const x of idx){ const d = day(x.at); if(!days.has(d) && Date.parse(x.at)>lim){ days.add(d); keep.add(x.id); } }
+    idx = idx.filter(x=>{ if(keep.has(x.id)) return true; del("snap:"+x.id); return false; });
+  }
+
+  /* ---- rebuild a state so it wins over every other copy when they sync ----
+     exact: entries that exist now but not in the version get deleted (with tombstones), so the version comes back exactly.
+     Entries of the version that were deleted somewhere get a new id, so old tombstones cannot delete them again. */
+  function rebuild(T, cur, exact){
+    const now = iso(); T.meta = T.meta || {}; const maps = {}, info = {back:0, gone:0};
+    for(const [K, tk] of C.lists){
+      const tomb = new Set([].concat(cur.meta && cur.meta[tk] || [], T.meta[tk] || []).map(String));
+      const list = T[K] = T[K] || [], have = new Map((cur[K]||[]).map(x=>[String(x.id), x])), ids = new Set();
+      const m = maps[K] = {};
+      for(const x of list){
+        const id = String(x.id); ids.add(id);
+        if(!have.has(id)) info.back++;
+        if(tomb.has(id)){ const n = nid(); m[id] = n; x.id = n; if(K!=="ev") x.u = now; }
+        else if(K!=="ev" && have.has(id) && JSON.stringify(have.get(id))!==JSON.stringify(x)) x.u = now;
+      }
+      if(exact) for(const id of have.keys()) if(!ids.has(id)){ tomb.add(id); info.gone++; }
+      T.meta[tk] = [...tomb];
+    }
+    for(const [K, children] of Object.entries(C.refs||{})){ const m = maps[K]; if(!m || !Object.keys(m).length) continue;
+      for(const [L2, f] of children) for(const x of (T[L2]||[])){ const v = x[f];
+        if(Array.isArray(v)) x[f] = v.map(y=>m[String(y)]||y); else if(v!=null && m[String(v)]) x[f] = m[String(v)]; } }
+    if(C.overrideOf && maps[C.overrideOf] && T.override){ const m = maps[C.overrideOf]; for(const k of Object.keys(T.override)) if(m[k]){ T.override[m[k]] = T.override[k]; delete T.override[k]; } }
+    T.meta.setAt = now;
+    VOLATILE.forEach(k=>{ if(cur.meta && k in cur.meta) T.meta[k] = cur.meta[k]; else delete T.meta[k]; });
+    T.meta.edited = true; T.meta.changed = now;
+    return info;
+  }
+  // what restoring a version would change, in numbers
+  function diff(T){
+    const r = {back:0, gone:0};
+    for(const [K] of C.lists.filter(x=>x[0]==="ev")){ const a = new Set((S[K]||[]).map(x=>String(x.id))), b = new Set((T[K]||[]).map(x=>String(x.id)));
+      b.forEach(id=>{ if(!a.has(id)) r.back++; }); a.forEach(id=>{ if(!b.has(id)) r.gone++; }); }
+    return r;
+  }
+  let quiet = false;
+  async function apply(T, why){
+    snapshot("Before "+why);
+    undo.push(capture()); redo.length = 0;
+    rebuild(T, S, true);
+    quiet = true; S = T; lastGood = capture(); quiet = false;
+    touch(); render(); refresh();
+  }
+
+  /* ---- undo ---- */
+  let lastGood = "", lastChangeAt = 0; const undo = [], redo = [];
+  function track(){
+    if(!on() || quiet) return;
+    const cur = capture();
+    if(cur===lastGood) return;
+    if(lastGood && Date.now()-lastChangeAt>1500){ undo.push(lastGood); if(undo.length>30) undo.shift(); redo.length = 0; }
+    lastGood = cur; lastChangeAt = Date.now(); refresh();
+  }
+  async function doUndo(back){
+    const from = back ? redo : undo, to = back ? undo : redo;
+    if(!from.length) return toast(back ? "Nothing to redo." : "Nothing to undo.");
+    const T = await fromText(from.pop()); to.push(capture());
+    const c0 = counts(S);
+    rebuild(T, S, true);
+    quiet = true; S = T; lastGood = capture(); lastChangeAt = 0; quiet = false;
+    touch(); render(); refresh();
+    const c1 = counts(S);
+    toast((back?"Redone":"Undone")+" ("+c1.items+" items, "+c1.recs+" records"+(c1.recs!==c0.recs?", was "+c0.recs:"")+")."+(back?"":" Press Redo to bring it back."));
+  }
+
+  /* ---- guards ---- */
+  // merging another copy: keep a version before it, and offer to bring back anything a sync deleted in bulk
+  function wrapMerge(orig){
+    return function(st){
+      if(!on()) return orig.apply(this, arguments);
+      const before = capture(), b = counts(S);
+      const r = orig.apply(this, arguments);
+      if(r && (r.ev || r.items || r.del)){
+        const why = r.del ? "Before sync removed "+r.del+" entries" : "Before sync";
+        snapshot(why, before);
+        const lostItems = b.items - (S.items||[]).length;
+        if(r.del >= 10 || lostItems >= 3) setTimeout(()=>offerBack(before, r.del, lostItems), 50);
+      }
+      return r;
+    };
+  }
+  async function offerBack(before, n, lostItems){
+    const how = await choose("Sync deleted "+n+" entries", (lostItems>0 ? lostItems+" items and their records were" : n+" records were")+" deleted on another device or in the file you merged. If that was a mistake, bring them back. A copy from before the sync is also kept in Backups.",
+      [{label:"Keep them deleted", value:""}, {label:"Bring them back", value:"back", primary:true}]);
+    if(!how) return;
+    const B = await fromText(before), T = await fromText(capture());
+    // add back what is missing, keep everything new
+    for(const [K] of C.lists){ const ids = new Set((T[K]||[]).map(x=>String(x.id))); for(const x of (B[K]||[])) if(!ids.has(String(x.id))) (T[K] = T[K]||[]).push(x); }
+    undo.push(capture()); redo.length = 0;
+    rebuild(T, S, false);
+    quiet = true; S = T; lastGood = capture(); quiet = false;
+    touch(); render(); refresh(); toast("Brought back. They will reach the other devices at the next sync or save.");
+  }
+  // before "Replace" with a file: warn when the file is older or has less in it
+  async function confirmReplace(st, name){
+    if(!on()) return true;
+    const a = counts(S), b = counts(st), ws = [];
+    if(b.items===0) { await ask("This file is empty", name+" has no items. It was not opened, so your data stays as it is.", "OK"); return false; }
+    if(b.items < a.items) ws.push("it has "+(a.items-b.items)+" fewer items ("+b.items+" instead of "+a.items+")");
+    if(b.recs < a.recs) ws.push("it has "+(a.recs-b.recs)+" fewer records ("+b.recs+" instead of "+a.recs+")");
+    if(b.last && a.last && b.last < a.last) ws.push("its latest record is "+fdate(b.last)+", the data here goes to "+fdate(a.last));
+    const fs = st.meta && (st.meta.saved || st.meta.changed) || "";
+    if(fs && S.meta.changed && fs < S.meta.changed && S.meta.edited) ws.push("it was saved "+t(fs)+", the data here was changed later ("+t(S.meta.changed)+")");
+    if(ws.length && !(await ask("This file looks older than the data here", "If you replace, "+ws.join("; ")+". Merge keeps both and is safer. Replace anyway? (A copy of the current data is kept in Backups.)", "Replace anyway"))) return false;
+    snapshot("Before replacing with "+name);
+    return true;
+  }
+  // before writing a data file: take in what another computer wrote there, never shrink a file by accident
+  async function checkDisk(h){
+    if(!on() || !h || !h.getFile) return true;
+    try{
+      if(h.queryPermission && (await h.queryPermission({mode:"readwrite"}))!=="granted"){ try{ if((await h.requestPermission({mode:"readwrite"}))!=="granted") return true; }catch(e){ return true; } }
+      const txt = await (await h.getFile()).text(); if(!txt.trim()) return true;
+      let st; try{ st = JSON.parse(txt); }catch(e){ return true; }
+      if(!st || st.kind!==C.kind || !Array.isArray(st.items)) return true;
+      const r = mergeState(st);
+      if(r && (r.ev || r.items || r.del)){ calc(); render(); track(); toast("The file had changes from another computer ("+(r.ev+r.items)+" new"+(r.del?", "+r.del+" deleted":"")+"). They were merged before saving."); }
+      const f = counts(st), a = counts(S);
+      if(a.items===0 && f.items>0) { toast("Not saved: the data here is empty and the file has "+f.items+" items."); return false; }
+      if(f.items>=5 && a.items < f.items*0.6 && !(await ask("Save much less data over the file?", "The file has "+f.items+" items and "+f.recs+" records, the data here has "+a.items+" items and "+a.recs+" records. Save anyway?", "Save anyway"))) return false;
+    }catch(e){}
+    return true;
+  }
+
+  /* ---- auto-save into a folder on this computer (Chrome / Edge) ---- */
+  const canFolder = () => !!window.showDirectoryPicker && window.self===window.top && !PWA_PHONE();
+  function PWA_PHONE(){ return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent); }
+  let dir = null, dirState = "off", dirAt = "", dirErr = "", dirT = 0, dirBusy = false, dirAgain = false;
+  async function folderInit(){
+    if(!canFolder()) return;
+    dir = await idbGet("savedir"); if(!dir) return;
+    try{ const p = await dir.queryPermission({mode:"readwrite"}); dirState = p==="granted" ? "on" : "paused"; }catch(e){ dirState = "paused"; }
+    dirAt = (await idbGet("savedirAt")) || "";
+    refresh();
+    if(dirState==="on") folderWrite(true);
+  }
+  async function folderPick(){
+    try{ const h = await showDirectoryPicker({id:C.kind, mode:"readwrite"}); dir = h; await put("savedir", h); dirState = "on"; refresh(); await folderWrite(true, true); }
+    catch(e){ if(!(e && e.name==="AbortError")) toast("Could not use this folder: "+(e.message||e)); }
+  }
+  async function folderResume(){ if(!dir) return folderPick(); try{ if((await dir.requestPermission({mode:"readwrite"}))==="granted"){ dirState = "on"; refresh(); await folderWrite(true); } }catch(e){ toast("Could not open the folder: "+(e.message||e)); } }
+  async function folderOff(){ del("savedir"); dir = null; dirState = "off"; refresh(); toast("Auto-save to the folder is off. The files already there stay."); }
+  function folderQueue(){ if(dirState!=="on") return; clearTimeout(dirT); dirT = setTimeout(()=>folderWrite(false), 3000); }
+  async function folderWrite(first, picked){
+    if(dirState!=="on" || !dir || !on()) return;
+    if(dirBusy){ dirAgain = true; return; } dirBusy = true;
+    try{
+      const fh = await dir.getFileHandle(C.file, {create:true});
+      const ok = await checkDiskFolder(fh, first, picked);
+      if(ok){
+        const at = iso(), out = Object.assign({}, S, {meta:Object.assign({}, S.meta, {saved:at, file:C.file})});
+        const txt = JSON.stringify(out);
+        await writeFile(fh, txt);
+        const bd = await dir.getDirectoryHandle("Backups", {create:true});
+        await writeFile(await bd.getFileHandle(C.base+" "+day(at)+".json", {create:true}), txt);
+        await pruneFolder(bd);
+        S.meta.saved = at; S.meta.file = C.file; dirAt = at; dirErr = ""; put("savedirAt", at); quiet = true; ORIG_PERSIST(); quiet = false; fileStatus();
+        if(picked) toast("Auto-save is on: "+dir.name+"/"+C.file+", with a daily copy in "+dir.name+"/Backups.");
+      }
+    }catch(e){
+      if(e && e.name==="NotAllowedError"){ dirState = "paused"; } else dirErr = (e && e.message) || String(e);
+    }
+    dirBusy = false; refresh();
+    if(dirAgain){ dirAgain = false; folderQueue(); }
+  }
+  async function writeFile(fh, txt){ const w = await fh.createWritable(); await w.write(new Blob([txt], {type:"application/json"})); await w.close(); }
+  async function checkDiskFolder(fh, first, picked){
+    const txt = await (await fh.getFile()).text();
+    if(!txt.trim()) return true;
+    let st; try{ st = JSON.parse(txt); }catch(e){ dirErr = C.file+" in the folder is damaged; it was not overwritten."; return false; }
+    if(!st || st.kind!==C.kind || !Array.isArray(st.items)){ dirErr = C.file+" in the folder is not a "+C.label+" file; it was not overwritten."; return false; }
+    const fresh = S.meta.seeded && !S.meta.edited && !S.meta.saved;
+    if(fresh && st.items.length){ const T = await C.unpack(st); T.meta = Object.assign({}, T.meta, {file:C.file}); quiet = true; S = T; lastGood = capture(); quiet = false; ORIG_PERSIST(); calc(); render(); toast("Data loaded from the folder: "+dir.name+"/"+C.file); return true; }
+    if(st.meta && st.meta.saved === S.meta.saved && !first) return true;   // our own last write
+    const r = mergeState(st);
+    if(r && (r.ev || r.items || r.del)){ calc(); render(); track(); toast("Merged changes found in "+dir.name+"/"+C.file+": "+(r.ev+r.items)+" new"+(r.del?", "+r.del+" deleted":"")+"."); }
+    const f = counts(st), a = counts(S);
+    if(a.items===0 && f.items>0){ dirErr = "The data here is empty, so "+C.file+" ("+f.items+" items) was not overwritten."; return false; }
+    if(picked && f.items) toast("Found "+C.file+" in this folder and merged it.");
+    return true;
+  }
+  async function pruneFolder(bd){
+    try{ const names = []; for await (const [n, h] of bd.entries()) if(h.kind==="file" && n.startsWith(C.base+" ") && n.endsWith(".json")) names.push(n);
+      names.sort().reverse().slice(90).forEach(n=>bd.removeEntry(n).catch(()=>{})); }catch(e){}
+  }
+
+  /* ---- bar under the header and the Backups dialog ---- */
+  function refresh(){
+    const u = $("undo"), rd = $("redo");
+    if(u){ u.disabled = !undo.length; u.title = undo.length ? "Undo the last change ("+undo.length+" step"+(undo.length>1?"s":"")+" back; Ctrl+Z)" : "Nothing to undo"; }
+    if(rd){ rd.hidden = !redo.length; }
+    const bar = $("safebar"); if(!bar) return;
+    let html = "";
+    const stale = S && S.meta.edited && (!S.meta.saved || S.meta.changed > S.meta.saved) && Date.now()-Date.parse(S.meta.saved||S.meta.created||iso()) > 2*864e5;
+    if(on() && dirState==="paused") html = `<span>Auto-save to the folder <b>${esc(dir?dir.name:"")}</b> is paused until you allow it again.</span><button id="sbres" class="primary">Resume auto-save</button>`;
+    else if(on() && dirState==="on" && dirErr) html = `<span>Auto-save problem: ${esc(dirErr)}</span><button id="sbopen">Backups</button>`;
+    else if(on() && canFolder() && dirState==="off") html = `<span><b>Auto-save is off.</b> Choose the folder on this computer or on the local server where the app keeps ${esc(C.file)} and a daily backup copy.</span><button id="sbpick" class="primary">Choose folder…</button>`;
+    else if(on() && stale && dirState!=="on") html = `<span>Changes are not saved to a file since ${esc(t(S.meta.saved||S.meta.created))}.</span><button id="sbsave" class="primary">Save now</button>${canFolder()?`<button id="sbopen">Set up auto-save</button>`:""}`;
+    bar.innerHTML = html; bar.hidden = !html;
+    const q = id=>bar.querySelector("#"+id);
+    if(q("sbres")) q("sbres").onclick = folderResume;
+    if(q("sbpick")) q("sbpick").onclick = folderPick;
+    if(q("sbopen")) q("sbopen").onclick = openDialog;
+    if(q("sbsave")) q("sbsave").onclick = ()=>$("savefile").click();
+  }
+  function statusText(){ return dirState==="on" ? " · auto-saved to folder "+(dir?dir.name:"")+(dirAt?" "+new Date(dirAt).toTimeString().slice(0,5):"") : dirState==="paused" ? " · folder auto-save paused" : ""; }
+  async function openDialog(){
+    await loadIdx(); await chain;
+    const fold = !canFolder() ? `<p class="hint" style="margin:0">This browser cannot write into a folder by itself. On the main computer open the app in <b>Chrome or Edge</b> to turn on auto-save. Here, press <b>Save data file</b> regularly.</p>`
+      : dirState==="off" ? `<p class="hint" style="margin:0">Choose a folder on this computer or a shared folder on the local server (for example a network drive such as S:\\${esc(C.label)}). The app then saves <b>${esc(C.file)}</b> there after every change and keeps a copy for each day in <b>Backups</b> (last 90 days). If the folder already has ${esc(C.file)}, it is merged in first.</p><div class="tools"><button id="sdpick" class="primary">Choose folder…</button></div>`
+      : `<p style="margin:0">Saving to <b>${esc(dir.name)}/${esc(C.file)}</b>${dirState==="on" ? (dirAt?", last saved "+esc(t(dirAt)):"") : " is paused until you allow it"}. Daily copies: <b>${esc(dir.name)}/Backups</b>.${dirErr?`<br><span class="dirty">${esc(dirErr)}</span>`:""}</p><div class="tools">${dirState!=="on"?`<button id="sdres" class="primary">Resume</button>`:`<button id="sdnow">Save now</button>`}<button id="sdpick">Change folder…</button><button id="sdoff">Turn off</button></div>`;
+    const rows = idx.map(x=>`<tr><td>${esc(t(x.at))}</td><td>${esc(x.why)}</td><td class="num">${x.items}</td><td class="num">${x.recs}</td><td>${x.last?esc(fdate(x.last)):""}</td><td style="white-space:nowrap"><button data-sr="${x.id}">Restore</button> <button data-sd="${x.id}" title="Save this version as a file">⇩</button></td></tr>`).join("");
+    const gh = C.ghList && (!C.hasGh || C.hasGh()) ? `<h4 style="margin:8px 0 0">Versions in GitHub</h4><p class="hint" style="margin:0">Every sync is kept in your private GitHub repository.</p><div id="sdgh"><button id="sdghb">Show GitHub versions</button></div>` : "";
+    const d = modal(`<h3 style="margin:0">Backups and restore</h3>
+      <h4 style="margin:0">Auto-save on this computer</h4>${fold}
+      <h4 style="margin:8px 0 0">Versions kept in this browser</h4>
+      <p class="hint" style="margin:0">A copy is taken when the app opens, every 30 minutes of work and before every sync, file replace, restore or undo. Restoring brings the data back exactly as it was then; the current data is kept as a new version first, so a restore can itself be undone.</p>
+      <div style="max-height:46vh;overflow:auto"><table class="tbl"><thead><tr><th>Saved</th><th>Why</th><th class="num">Items</th><th class="num">Records</th><th>Last record</th><th></th></tr></thead><tbody>${rows||`<tr><td colspan="6">No versions yet.</td></tr>`}</tbody></table></div>
+      ${gh}
+      <div class="tools" style="justify-content:space-between"><button id="sdall">Save a backup file now</button><button id="sdclose" class="primary">Close</button></div>`);
+    const q = s=>d.el.querySelector(s);
+    q("#sdclose").onclick = d.close;
+    if(q("#sdpick")) q("#sdpick").onclick = async ()=>{ await folderPick(); d.close(); openDialog(); };
+    if(q("#sdres")) q("#sdres").onclick = async ()=>{ await folderResume(); d.close(); openDialog(); };
+    if(q("#sdnow")) q("#sdnow").onclick = async ()=>{ await folderWrite(true); d.close(); openDialog(); toast(dirErr ? "Auto-save problem: "+dirErr : "Saved to "+dir.name+"/"+C.file+"."); };
+    if(q("#sdoff")) q("#sdoff").onclick = async ()=>{ await folderOff(); d.close(); openDialog(); };
+    q("#sdall").onclick = async ()=>{ try{ const n = await saveBlob(new Blob([JSON.stringify(Object.assign({}, S, {meta:Object.assign({}, S.meta)}))], {type:"application/json"}), C.base+" backup "+day(iso())+".json", "json-backup"); toast("Backup saved: "+n); }catch(err){ saveErr(err); } };
+    d.el.querySelectorAll("[data-sd]").forEach(b=>b.onclick = async ()=>{ const x = idx.find(y=>y.id===b.dataset.sd), txt = await idbGet("snap:"+x.id); if(!txt) return toast("This version is no longer available.");
+      try{ const st = await fromText(txt); st.meta = Object.assign({}, st.meta, {saved:x.at}); const n = await saveBlob(new Blob([JSON.stringify(st)], {type:"application/json"}), C.base+" version "+day(x.at)+" "+new Date(x.at).toTimeString().slice(0,5).replace(":","")+".json", "json-backup"); toast("Saved: "+n); }catch(err){ saveErr(err); } });
+    d.el.querySelectorAll("[data-sr]").forEach(b=>b.onclick = async ()=>{ const x = idx.find(y=>y.id===b.dataset.sr), txt = await idbGet("snap:"+x.id); if(!txt) return toast("This version is no longer available.");
+      if(await restoreAsk(await fromText(txt), "the version of "+t(x.at), "restoring the version of "+t(x.at))){ d.close(); } });
+    if(q("#sdghb")) q("#sdghb").onclick = async ()=>{
+      const box = q("#sdgh"); box.textContent = "Loading…";
+      try{ const list = await C.ghList();
+        box.innerHTML = `<div style="max-height:30vh;overflow:auto"><table class="tbl"><tbody>${list.map((c,k)=>`<tr><td>${esc(t(c.at))}</td><td>${esc(c.msg)}</td><td><button data-gr="${k}">Restore</button></td></tr>`).join("")||"<tr><td>No versions found.</td></tr>"}</tbody></table></div>`;
+        box.querySelectorAll("[data-gr]").forEach(b=>b.onclick = async ()=>{ const c = list[+b.dataset.gr]; b.disabled = true; b.textContent = "Loading…";
+          try{ const st = await C.ghGet(c.sha); if(await restoreAsk(await C.unpack(st), "the GitHub version of "+t(c.at), "restoring the GitHub version of "+t(c.at))) d.close(); }catch(e){ toast(e.message||String(e)); }
+          b.disabled = false; b.textContent = "Restore"; });
+      }catch(e){ box.textContent = e.message || String(e); }
+    };
+  }
+  async function restoreAsk(T, label, why){
+    const a = counts(S), b = counts(T), df = diff(T);
+    const ok = await ask("Restore "+label+"?", "Now: "+a.items+" items, "+a.recs+" records. That version: "+b.items+" items, "+b.recs+" records"+(b.last?" (last record "+fdate(b.last)+")":"")+". "+(df.back||df.gone ? "Restoring brings back "+df.back+" records and removes "+df.gone+" added later. " : "")+"The current data is kept in Backups first, so you can go back.", "Restore");
+    if(!ok) return false;
+    await apply(T, why); toast("Restored "+label+". It reaches the other devices at the next sync or save.");
+    return true;
+  }
+
+  /* ---- start ---- */
+  let ORIG_PERSIST = null;
+  async function init(){
+    try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+    ORIG_PERSIST = persist;
+    persist = function(){ const r = ORIG_PERSIST.apply(this, arguments); if(!quiet){ track(); folderQueue(); } return r; };
+    mergeState = wrapMerge(mergeState);
+    lastGood = on() ? capture() : "";
+    if(idb){ await loadIdx(); pending.splice(0).forEach(writeSnap); }
+    snapshot("Opened the app");
+    setInterval(()=>{ if(on() && Date.now()-lastSnapAt > 30*60e3) snapshot("Every 30 minutes"); }, 60e3);
+    document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="hidden" && on() && Date.now()-lastSnapAt > 5*60e3) snapshot("App closed or hidden"); });
+    document.addEventListener("keydown", e=>{ if(!on() || !(e.ctrlKey||e.metaKey) || e.key.toLowerCase()!=="z" || document.querySelector(".modal")) return; const tg = e.target; if(tg && (tg.tagName==="INPUT" || tg.tagName==="TEXTAREA" || tg.isContentEditable)) return; e.preventDefault(); doUndo(e.shiftKey); });
+    if($("undo")) $("undo").onclick = ()=>doUndo(false);
+    if($("redo")) $("redo").onclick = ()=>doUndo(true);
+    if($("backups")) $("backups").onclick = openDialog;
+    await folderInit();
+    refresh(); fileStatus();
+  }
+  return {init, snapshot, confirmReplace, checkDisk, statusText, refresh, openDialog, capture, track};
+})();
+
+
 document.querySelectorAll(".tabs button").forEach(b=>b.onclick = ()=>{ tab = b.dataset.tab; try{ localStorage.setItem("ppe-tab", tab); }catch(e){} render(); });
 try{ tab = localStorage.getItem("ppe-tab") || "stock"; }catch(e){}
 window.addEventListener("beforeunload", e=>{ if(S && (!S.meta.saved || S.meta.changed > S.meta.saved) && S.meta.edited){ e.preventDefault(); e.returnValue = ""; } });
@@ -1472,8 +1835,9 @@ window.addEventListener("beforeunload", e=>{ if(S && (!S.meta.saved || S.meta.ch
   if(raw){ try{ const st = JSON.parse(raw); if(st && st.kind==="ppe-inventory"){ addSeedPhotos(st); ensureGear(st); S = st; S.settings = Object.assign({months:3,end:"",safety:20}, S.settings||{}); S.override = S.override||{}; } }catch(e){} }
   if(MODE==="crew" && !cloud){ /* offline crew keeps using the local list */ }
   calc(); fileStatus(); render();
+  await Safety.init();
   initCloud();
-  if(!(window.claude && claude.use)){ document.body.classList.add("gh"); if(ghCfg() && ghCfg().auto!==false && MODE==="owner") setTimeout(()=>ghSync(true), 1500); }
+  if(!(window.claude && claude.use)){ if(ghCfg() && ghCfg().auto!==false && MODE==="owner") setTimeout(()=>ghSync(true), 1500); }
 })();
 </script>
 
