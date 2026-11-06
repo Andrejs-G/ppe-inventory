@@ -172,6 +172,7 @@ body.crewmode #undo, body.crewmode #redo, body.crewmode #backups, body.crewmode 
     <button id="xlsx" data-t="Экспорт в Excel">Экспорт в Excel</button>
     <button id="undo" disabled title="Nothing to undo">↶ Undo</button><button id="redo" hidden>↷ Redo</button>
     <button id="backups" title="Versions, restore and auto-save to a folder">Backups</button>
+    <div class="seg small" role="group" aria-label="Background"><button data-theme="light">White</button><button data-theme="dark">Dark</button></div>
     
     <input type="file" id="fileinput" accept=".json,application/json" hidden>
   </div>
@@ -785,7 +786,7 @@ $("openfile").onclick = async ()=>{
 $("fileinput").onchange = async e=>{ const f = e.target.files[0]; if(f) loadText(await f.text(), f.name); };
 
 /* ---------- GitHub sync: the PC and the iPhone share one data file in the user's private GitHub repo ---------- */
-const ghCfg = ()=>lsGet("ppe-gh", null);
+const ghCfg = ()=>null;   // GitHub sync switched off (user request 2026-11-06): data is kept in a folder on the computer instead
 let ghBusy = false, ghT = 0;
 const b64enc = txt => { const b = new TextEncoder().encode(txt); let s = ""; for(let i=0;i<b.length;i+=0x8000) s += String.fromCharCode.apply(null, b.subarray(i,i+0x8000)); return btoa(s); };
 const b64dec = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g,"")), c=>c.charCodeAt(0)));
@@ -928,7 +929,7 @@ function fileStatus(){
   el.classList.toggle("dirty", dirty);
   const t = s => { const d = new Date(s); return fdate(d.toISOString().slice(0,10))+" "+d.toTimeString().slice(0,5); };
   el.textContent = (S.meta.file ? S.meta.file+" · " : "") + (dirty ? L("Не сохранено в файл с ")+t(S.meta.saved||S.meta.created) : L("Все изменения сохранены в файл"));
-  if(S.meta.file==="GitHub"){ el.textContent = dirty ? "Changes not synced yet (last sync "+t(S.meta.saved)+")" : "Synced with GitHub "+t(S.meta.saved); el.classList.toggle("dirty", dirty); }
+  if(S.meta.file==="GitHub" && ghCfg()){ el.textContent = dirty ? "Changes not synced yet (last sync "+t(S.meta.saved)+")" : "Synced with GitHub "+t(S.meta.saved); el.classList.toggle("dirty", dirty); }
   else if(ghCfg()) el.textContent += ghStatusText();
   try{ el.textContent += Safety.statusText(); Safety.refresh(); }catch(e){}
   if(typeof syncState!=="undefined" && syncState!=="off"){ el.textContent += syncState==="on" ? " · Online sync on" : " · Online sync: no connection, will retry"; if(syncState==="on") el.classList.remove("dirty"); }
@@ -1232,6 +1233,10 @@ function bindCrewPanel(){
 let toastT = 0;
 function toast(msg){ let t = document.querySelector(".toast"); if(!t){ t = document.createElement("div"); t.className = "toast"; t.setAttribute("role","status"); document.body.appendChild(t); } t.textContent = msg; clearTimeout(toastT); toastT = setTimeout(()=>t.remove(), 5000); }
 function applyStatic(){ document.documentElement.lang = LANG; document.querySelectorAll("[data-t]").forEach(el=>el.textContent = L(el.dataset.t)); document.querySelectorAll("[data-lang]").forEach(b=>b.setAttribute("aria-pressed", b.dataset.lang===LANG)); document.title = L("Склад СИЗ (PPE)"); }
+/* white (default) or dark background, remembered on this device */
+function applyTheme(t){ document.documentElement.setAttribute("data-theme", t); document.querySelectorAll("button[data-theme]").forEach(b=>b.setAttribute("aria-pressed", b.dataset.theme===t)); }
+document.querySelectorAll("button[data-theme]").forEach(b=>b.onclick = ()=>{ lsSet("ppe-theme", b.dataset.theme); applyTheme(b.dataset.theme); });
+applyTheme(lsGet("ppe-theme", "light"));
 document.querySelectorAll("[data-lang]").forEach(b=>b.onclick = ()=>{ LANG = b.dataset.lang; try{ localStorage.setItem("ppe-lang", LANG); }catch(e){} applyStatic(); calc(); fileStatus(); render(); });
 /* ---------- Fall protection register: harnesses, lanyards, slings, hooks; each item tracked by serial number ---------- */
 const GEARSEED = null;
@@ -1742,10 +1747,12 @@ const Safety = (()=>{
     const stale = S && S.meta.edited && (!S.meta.saved || S.meta.changed > S.meta.saved) && Date.now()-Date.parse(S.meta.saved||S.meta.created||iso()) > 2*864e5;
     if(on() && dirState==="paused") html = `<span>Auto-save to the folder <b>${esc(dir?dir.name:"")}</b> is paused until you allow it again.</span><button id="sbres" class="primary">Resume auto-save</button>`;
     else if(on() && dirState==="on" && dirErr) html = `<span>Auto-save problem: ${esc(dirErr)}</span><button id="sbopen">Backups</button>`;
+    else if(on() && canFolder() && dirState==="off") html = `<span><b>Auto-save is off.</b> Choose the folder on this computer or on the local server where the app keeps ${esc(C.file)} and a daily backup copy.</span><button id="sbpick" class="primary">Choose folder…</button>`;
     else if(on() && stale && dirState!=="on") html = `<span>Changes are not saved to a file since ${esc(t(S.meta.saved||S.meta.created))}.</span><button id="sbsave" class="primary">Save now</button>${canFolder()?`<button id="sbopen">Set up auto-save</button>`:""}`;
     bar.innerHTML = html; bar.hidden = !html;
     const q = id=>bar.querySelector("#"+id);
     if(q("sbres")) q("sbres").onclick = folderResume;
+    if(q("sbpick")) q("sbpick").onclick = folderPick;
     if(q("sbopen")) q("sbopen").onclick = openDialog;
     if(q("sbsave")) q("sbsave").onclick = ()=>$("savefile").click();
   }
@@ -1753,7 +1760,7 @@ const Safety = (()=>{
   async function openDialog(){
     await loadIdx(); await chain;
     const fold = !canFolder() ? `<p class="hint" style="margin:0">This browser cannot write into a folder by itself. On the main computer open the app in <b>Chrome or Edge</b> to turn on auto-save. Here, press <b>Save data file</b> regularly.</p>`
-      : dirState==="off" ? `<p class="hint" style="margin:0">Choose a folder on this computer (for example Documents/${esc(C.label)}). The app then saves <b>${esc(C.file)}</b> there after every change and keeps a copy for each day in <b>Backups</b> (last 90 days). If the folder already has ${esc(C.file)}, it is merged in first.</p><div class="tools"><button id="sdpick" class="primary">Choose folder…</button></div>`
+      : dirState==="off" ? `<p class="hint" style="margin:0">Choose a folder on this computer or a shared folder on the local server (for example a network drive such as S:\\${esc(C.label)}). The app then saves <b>${esc(C.file)}</b> there after every change and keeps a copy for each day in <b>Backups</b> (last 90 days). If the folder already has ${esc(C.file)}, it is merged in first.</p><div class="tools"><button id="sdpick" class="primary">Choose folder…</button></div>`
       : `<p style="margin:0">Saving to <b>${esc(dir.name)}/${esc(C.file)}</b>${dirState==="on" ? (dirAt?", last saved "+esc(t(dirAt)):"") : " is paused until you allow it"}. Daily copies: <b>${esc(dir.name)}/Backups</b>.${dirErr?`<br><span class="dirty">${esc(dirErr)}</span>`:""}</p><div class="tools">${dirState!=="on"?`<button id="sdres" class="primary">Resume</button>`:`<button id="sdnow">Save now</button>`}<button id="sdpick">Change folder…</button><button id="sdoff">Turn off</button></div>`;
     const rows = idx.map(x=>`<tr><td>${esc(t(x.at))}</td><td>${esc(x.why)}</td><td class="num">${x.items}</td><td class="num">${x.recs}</td><td>${x.last?esc(fdate(x.last)):""}</td><td style="white-space:nowrap"><button data-sr="${x.id}">Restore</button> <button data-sd="${x.id}" title="Save this version as a file">⇩</button></td></tr>`).join("");
     const gh = C.ghList && (!C.hasGh || C.hasGh()) ? `<h4 style="margin:8px 0 0">Versions in GitHub</h4><p class="hint" style="margin:0">Every sync is kept in your private GitHub repository.</p><div id="sdgh"><button id="sdghb">Show GitHub versions</button></div>` : "";
@@ -1830,7 +1837,7 @@ window.addEventListener("beforeunload", e=>{ if(S && (!S.meta.saved || S.meta.ch
   calc(); fileStatus(); render();
   await Safety.init();
   initCloud();
-  if(!(window.claude && claude.use)){ document.body.classList.add("gh"); if(ghCfg() && ghCfg().auto!==false && MODE==="owner") setTimeout(()=>ghSync(true), 1500); }
+  if(!(window.claude && claude.use)){ if(ghCfg() && ghCfg().auto!==false && MODE==="owner") setTimeout(()=>ghSync(true), 1500); }
 })();
 </script>
 
