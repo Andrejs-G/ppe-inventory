@@ -816,7 +816,7 @@ async function ghSync(quiet){
         if(txt===null){ const rr = await fetch(url+"?ref=main&t="+Date.now(), {headers:Object.assign({}, h, {Accept:"application/vnd.github.raw+json"}), cache:"no-store"}); txt = await rr.text(); }
         try{ remote = JSON.parse(txt); }catch(e){}
         if(!remote || remote.kind!=="ppe-inventory") throw new Error("The file in GitHub is not a PPE data file.");
-      } else if(r.status===401) throw new Error("GitHub refused the token. It may be mistyped or expired: open Sync settings (⚙) and paste a new one.");
+      } else if(r.status===401) throw new Error("GitHub refused the token. It is mistyped, expired, or was replaced by “Regenerate” (that stops the old token on every computer). Open Sync settings (⚙), clear the field, paste the current token.");
       else if(r.status===404){
         const rr = await fetch(`https://api.github.com/repos/${c.repo}`, {headers:h, cache:"no-store"});
         if(rr.status!==200) throw new Error(`Repository ${c.repo} not found, or the token has no access to it.`);
@@ -849,17 +849,20 @@ function ghSetup(){
   const d = modal(`<h3 style="margin:0">Sync with GitHub</h3>
     <p class="hint" style="margin:0">Your PC and iPhone keep one shared data file in your <b>private</b> GitHub repository. Press Sync on either device: it merges both sides, so nothing is overwritten.</p>
     <label>Repository (owner/name)<input id="ghrepo" placeholder="Andrejs-G/ppe-data" value="${esc(c.repo)}" autocapitalize="off" autocorrect="off"></label>
-    <label>Access token<input id="ghtok" type="password" placeholder="github_pat_…" value="${esc(c.token)}" autocomplete="off"></label>
+    <label>Access token<input id="ghtok" type="password" placeholder="github_pat_…" value="${esc(c.token)}" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:-6px"><input id="ghshow" type="checkbox" style="width:auto"> Show the token (check it starts with github_pat_ and has no extra text)</label>
     <label style="flex-direction:row;align-items:center;gap:8px"><input id="ghauto" type="checkbox" style="width:auto" ${c.auto!==false?"checked":""}> Sync automatically when online (on opening and after changes)</label>
     <p class="hint" style="margin:0">The token stays only on this device. Make it at github.com → Settings → Developer settings → Fine-grained tokens: only this repository, permission Contents: Read and write.</p>
     <div class="tools" style="justify-content:space-between">${ghCfg()?`<button id="ghoff">Disconnect</button>`:"<span></span>"}<span class="tools"><button id="ghcancel">Cancel</button><button id="ghsave" class="primary">Save and sync</button></span></div>`, "small");
   const q = sel=>d.el.querySelector(sel);
   q("#ghcancel").onclick = d.close;
+  q("#ghshow").onchange = e=>{ q("#ghtok").type = e.target.checked ? "text" : "password"; };
   if(q("#ghoff")) q("#ghoff").onclick = ()=>{ try{ localStorage.removeItem("ppe-gh"); }catch(e){} d.close(); fileStatus(); toast("GitHub sync disconnected on this device."); };
   q("#ghsave").onclick = ()=>{
-    const repo = q("#ghrepo").value.trim().replace(/^https?:\/\/github\.com\//,"").replace(/\.git$/,"").replace(/\/$/,""), token = q("#ghtok").value.trim();
+    const repo = q("#ghrepo").value.trim().replace(/^https?:\/\/github\.com\//,"").replace(/\.git$/,"").replace(/\/$/,""), token = q("#ghtok").value.replace(/[\s\u200b-\u200d\ufeff"'«»“”]/g,"");
     if(!/^[\w.-]+\/[\w.-]+$/.test(repo)) return toast("Write the repository as owner/name, e.g. Andrejs-G/ppe-data.");
     if(!token) return toast("Paste the access token.");
+    if(!/^(github_pat_|ghp_)[A-Za-z0-9_]+$/.test(token)) return toast("This does not look like a GitHub token: it must start with github_pat_ (or ghp_) and contain only letters, digits and _. Tick “Show the token” to check it.");
     lsSet("ppe-gh", {repo, token, path:c.path||"PPE data.json", auto:q("#ghauto").checked, at:c.repo===repo?c.at:""}); d.close(); ghSync(false);
   };
 }
